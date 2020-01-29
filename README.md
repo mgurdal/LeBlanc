@@ -1,5 +1,5 @@
 # LeBlanc
-TCP Load Balancer
+L4 Load Balancer
 
 
 ## ZERO CODE

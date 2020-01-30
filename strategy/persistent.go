@@ -3,6 +3,7 @@ package strategy
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 
 	"github.com/google/uuid"
@@ -50,10 +51,8 @@ func (p *persistent) GetChannel(client *service.Client) *service.Channel {
 			Src: client,
 			Dst: backend,
 		}
-		fmt.Printf("Registering %s\n", channel)
+		// fmt.Printf("Registering %s\n", channel)
 		p.Channels[client.Addr.String()] = channel
-	} else {
-		fmt.Printf("Using existing channel %s\n", channel)
 	}
 
 	return channel
@@ -61,7 +60,7 @@ func (p *persistent) GetChannel(client *service.Client) *service.Channel {
 
 func (p *persistent) Acquire(client *service.Client) *service.Service {
 	s := p.Next()
-	fmt.Printf("Selected %s for %s total: %d\n", s.Addr, client.Addr, len(p.Services))
+	// fmt.Printf("Selected %s for %s total: %d\n", s.Addr, client.Addr, len(p.Services))
 	return s
 }
 
@@ -89,4 +88,10 @@ func (p *persistent) ActiveServices() []*service.Service {
 
 	}
 	return actives[:ln]
+}
+func (p *persistent) Stats() map[string]string {
+	return map[string]string{
+		"Channels": strconv.Itoa(len(p.Channels)),
+		"Services": strconv.Itoa(len(p.ActiveServices())),
+	}
 }

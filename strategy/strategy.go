@@ -12,4 +12,5 @@ type Strategy interface {
 	ListServices() []*service.Service
 	ActiveServices() []*service.Service
 	GetChannelByService(addr net.Addr) *service.Channel
+	Stats() map[string]string
 }

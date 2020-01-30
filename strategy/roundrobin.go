@@ -1,10 +1,11 @@
 package strategy
 
 import (
-	"fmt"
 	"net"
+	"strconv"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/mgurdal/lb/service"
 )
 
@@ -33,11 +34,13 @@ func (r *roundrobin) GetChannelByService(addr net.Addr) *service.Channel {
 }
 
 func (r *roundrobin) GetChannel(client *service.Client) *service.Channel {
-	r.mu.Lock()
-	sc := r.Channels[r.next]
-	r.next = (r.next + 1) % len(r.Channels)
-	r.mu.Unlock()
-	return sc
+	backend := r.Acquire(client)
+	channel := &service.Channel{
+		ID:  uuid.New(),
+		Src: client,
+		Dst: backend,
+	}
+	return channel
 }
 
 // Next returns next address
@@ -53,7 +56,7 @@ func (r *roundrobin) Next() *service.Service {
 func (rr *roundrobin) Acquire(client *service.Client) *service.Service {
 
 	s := rr.Next()
-	fmt.Printf("Selected %s for %s total: %d", s.Addr, client.Addr, len(rr.Services))
+	// fmt.Printf("Selected %s for %s total: %d", s.Addr, client.Addr, len(rr.Services))
 	return s
 }
 
@@ -72,4 +75,11 @@ func (r *roundrobin) ActiveServices() []*service.Service {
 
 	}
 	return actives[:ln]
+}
+
+func (r *roundrobin) Stats() map[string]string {
+	return map[string]string{
+		"Channels": strconv.Itoa(len(r.Channels)),
+		"Services": strconv.Itoa(len(r.ActiveServices())),
+	}
 }

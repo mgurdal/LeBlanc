@@ -3,6 +3,7 @@ package lb
 import (
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/mgurdal/lb/service"
@@ -37,7 +38,7 @@ var (
 const (
 	HEALTHY             = "HEALTHY"
 	DEAD                = "DEAD"
-	MAX_UDP_PACKET_SIZE = 1500
+	MAX_UDP_PACKET_SIZE = 15
 
 	BANNER = `
 	▄█          ▄████████ ▀█████████▄   ▄█          ▄████████ ███▄▄▄▄    ▄████████ 
@@ -57,6 +58,7 @@ type LB struct {
 	Active   int
 	Total    int
 	Latency  time.Duration
+	Mu       *sync.Mutex
 }
 
 // Route selects a server based on the
@@ -70,6 +72,7 @@ func (lb *LB) Route(conn net.PacketConn) {
 
 		// Read client input
 		n, clientAddr, err := conn.ReadFrom(readBuffer)
+
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -78,10 +81,8 @@ func (lb *LB) Route(conn net.PacketConn) {
 		// Recieved a message from one of the backends
 		channel := lb.Strategy.GetChannelByService(clientAddr)
 		if channel != nil {
-			fmt.Printf("Received from server %s (%s)\n", channel.Dst.Addr, clientAddr)
 			go channel.ReSend(readBuffer)
 		} else {
-			fmt.Printf("packet-received: bytes=%d from=%s\n", n, clientAddr.String())
 
 			client := &service.Client{
 				Addr: clientAddr,
@@ -89,9 +90,12 @@ func (lb *LB) Route(conn net.PacketConn) {
 			}
 
 			channel := lb.Strategy.GetChannel(client)
-			// TODO: check service availability
+
 			go channel.Push(readBuffer[:n])
 		}
+
+		// fmt.Printf("\r Active %6d Total %6d", lb.Active, lb.Total)
+		// fmt.Printf("\r Connections %s", lb.Strategy.Stats())
 
 	}
 

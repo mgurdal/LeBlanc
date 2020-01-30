@@ -1,99 +1,114 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	"flag"
+	"log"
 	"net"
+	"os"
+	"os/signal"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// maxBufferSize specifies the size of the buffers that
-// are used to temporarily hold data from the UDP packets
-// that we receive.
-const maxBufferSize = 1024
+const (
+	flushInterval = time.Duration(1) * time.Second
+	maxQueueSize  = 1000000
+	UDPPacketSize = 15
+)
 
-// server wraps all the UDP echo server functionality.
-// ps.: the server is capable of answering to a single
-// client at a time.
-func server(ctx context.Context, address string) (err error) {
-	timeout := time.Duration(time.Second * 10)
-	// ListenPacket provides us a wrapper around ListenUDP so that
-	// we don't need to call `net.ResolveUDPAddr` and then subsequentially
-	// perform a `ListenUDP` with the UDP address.
-	//
-	// The returned value (PacketConn) is pretty much the same as the one
-	// from ListenUDP (UDPConn) - the only difference is that `Packet*`
-	// methods and interfaces are more broad, also covering `ip`.
-	pc, err := net.ListenPacket("udp", address)
-	if err != nil {
-		return
+var address string
+var bufferPool sync.Pool
+var ops uint64 = 0
+var total uint64 = 0
+var flushTicker *time.Ticker
+var nbWorkers int
+
+func init() {
+	flag.StringVar(&address, "addr", ":50004", "Address of the UDP server to test")
+	flag.IntVar(&nbWorkers, "concurrency", runtime.NumCPU(), "Number of workers to run in parallel")
+}
+
+type message struct {
+	addr   net.Addr
+	msg    []byte
+	length int
+}
+
+type messageQueue chan message
+
+func (mq messageQueue) enqueue(m message) {
+	mq <- m
+}
+
+func (mq messageQueue) dequeue() {
+	for m := range mq {
+		handleMessage(m.addr, m.msg[0:m.length])
+		bufferPool.Put(m.msg)
 	}
+}
 
-	// `Close`ing the packet "connection" means cleaning the data structures
-	// allocated for holding information about the listening socket.
-	defer pc.Close()
+var mq messageQueue
 
-	doneChan := make(chan error, 1)
-	buffer := make([]byte, maxBufferSize)
+func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	flag.Parse()
 
-	// Given that waiting for packets to arrive is blocking by nature and we want
-	// to be able of canceling such action if desired, we do that in a separate
-	// go routine.
+	bufferPool = sync.Pool{
+		New: func() interface{} { return make([]byte, UDPPacketSize) },
+	}
+	mq = make(messageQueue, maxQueueSize)
+	listenAndReceive(nbWorkers)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
 	go func() {
-		for {
-			// By reading from the connection into the buffer, we block until there's
-			// new content in the socket that we're listening for new packets.
-			//
-			// Whenever new packets arrive, `buffer` gets filled and we can continue
-			// the execution.
-			//
-			// note.: `buffer` is not being reset between runs.
-			//	  It's expected that only `n` reads are read from it whenever
-			//	  inspecting its contents.
-			n, addr, err := pc.ReadFrom(buffer)
-			if err != nil {
-				doneChan <- err
-				return
-			}
-
-			fmt.Printf("packet-received: bytes=%d from=%s\n",
-				n, addr.String())
-
-			// Setting a deadline for the `write` operation allows us to not block
-			// for longer than a specific timeout.
-			//
-			// In the case of a write operation, that'd mean waiting for the send
-			// queue to be freed enough so that we are able to proceed.
-			deadline := time.Now().Add(timeout)
-			err = pc.SetWriteDeadline(deadline)
-			if err != nil {
-				doneChan <- err
-				return
-			}
-
-			// Write the packet's contents back to the client.
-			n, err = pc.WriteTo(buffer[:n], addr)
-			if err != nil {
-				doneChan <- err
-				return
-			}
-
-			fmt.Printf("packet-written: bytes=%d to=%s\n", n, addr.String())
+		for range c {
+			atomic.AddUint64(&total, ops)
+			log.Printf("Total ops %d", total)
+			os.Exit(0)
 		}
 	}()
 
-	select {
-	case <-ctx.Done():
-		fmt.Println("cancelled")
-		err = ctx.Err()
-	case err = <-doneChan:
+	flushTicker = time.NewTicker(flushInterval)
+	for range flushTicker.C {
+		log.Printf("Ops/s %f", float64(ops)/flushInterval.Seconds())
+		atomic.AddUint64(&total, ops)
+		atomic.StoreUint64(&ops, 0)
 	}
-
-	return
 }
 
-func main() {
-	addr := ":50005"
-	ctx := context.TODO()
-	server(ctx, addr)
+func listenAndReceive(maxWorkers int) error {
+	c, err := net.ListenPacket("udp", address)
+	log.Printf("Serving at: %s\n", address)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	for i := 0; i < maxWorkers; i++ {
+		go mq.dequeue()
+		go receive(c)
+	}
+	return nil
+}
+
+// receive accepts incoming datagrams on c and calls handleMessage() for each message
+func receive(c net.PacketConn) {
+	defer c.Close()
+
+	for {
+		msg := bufferPool.Get().([]byte)
+		nbytes, addr, err := c.ReadFrom(msg[0:])
+		if err != nil {
+			log.Printf("Error %s", err)
+			continue
+		}
+		mq.enqueue(message{addr, msg, nbytes})
+	}
+}
+
+func handleMessage(addr net.Addr, msg []byte) {
+	// Do something with message
+	atomic.AddUint64(&ops, 1)
 }

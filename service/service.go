@@ -50,12 +50,12 @@ func (ch *Channel) ReSend(readBuffer []byte) {
 		return
 	}
 
-	n, err := ch.Src.Conn.WriteTo(readBuffer, ch.Src.Addr)
+	_, err = ch.Src.Conn.WriteTo(readBuffer, ch.Src.Addr)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Printf("packet-written: bytes=%d to=%s\n", n, ch.Src.Addr)
+	// fmt.Printf("packet-written: bytes=%d to=%s\n", n, ch.Src.Addr)
 	return
 
 }
@@ -71,12 +71,12 @@ func (ch *Channel) Push(readBuffer []byte) {
 		return
 	}
 
-	n, err := ch.Src.Conn.WriteTo(readBuffer, ch.Dst.Addr)
+	_, err = ch.Src.Conn.WriteTo(readBuffer, ch.Dst.Addr)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Printf("packet-written: bytes=%d to=%s\n", n, ch.Dst.Addr)
+	// fmt.Printf("packet-written: bytes=%d to=%s\n", n, ch.Dst.Addr)
 	return
 
 }

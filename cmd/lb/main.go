@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/mgurdal/lb/lb"
@@ -15,7 +16,7 @@ func main() {
 			ID: uuid.New(),
 			Addr: &net.UDPAddr{
 				IP:   net.IPv4(127, 0, 0, 1),
-				Port: 500121,
+				Port: 50004,
 			},
 			Stat: &service.Stat{},
 		},
@@ -27,10 +28,18 @@ func main() {
 			},
 			Stat: &service.Stat{},
 		},
+		&service.Service{
+			ID: uuid.New(),
+			Addr: &net.UDPAddr{
+				IP:   net.IPv4(127, 0, 0, 1),
+				Port: 50009,
+			},
+			Stat: &service.Stat{},
+		},
 	}
 
-	strategy := strategy.NewPersistent(services)
-	lb := lb.LB{Strategy: strategy}
+	strategy := strategy.NewRobin(services)
+	lb := lb.LB{Strategy: strategy, Mu: new(sync.Mutex)}
 
 	addr := ":50007"
 	lb.Listen(addr)

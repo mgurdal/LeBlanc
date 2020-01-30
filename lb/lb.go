@@ -75,16 +75,23 @@ func (lb *LB) Route(conn net.PacketConn) {
 			return
 		}
 
-		fmt.Printf("packet-received: bytes=%d from=%s\n", n, clientAddr.String())
+		// Recieved a message from one of the backends
+		channel := lb.Strategy.GetChannelByService(clientAddr)
+		if channel != nil {
+			fmt.Printf("Received from server %s (%s)\n", channel.Dst.Addr, clientAddr)
+			go channel.ReSend(readBuffer)
+		} else {
+			fmt.Printf("packet-received: bytes=%d from=%s\n", n, clientAddr.String())
 
-		client := &service.Client{
-			Addr: clientAddr,
-			Conn: conn,
+			client := &service.Client{
+				Addr: clientAddr,
+				Conn: conn,
+			}
+
+			channel := lb.Strategy.GetChannel(client)
+			// TODO: check service availability
+			go channel.Push(readBuffer[:n])
 		}
-
-		channel := lb.Strategy.GetChannel(client)
-		// TODO: check service availability
-		go channel.Push(readBuffer[:n])
 
 	}
 

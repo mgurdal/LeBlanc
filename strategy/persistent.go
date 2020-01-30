@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"fmt"
+	"net"
 	"sync"
 
 	"github.com/google/uuid"
@@ -29,6 +30,15 @@ func NewPersistent(services []*service.Service) Strategy {
 	}
 }
 
+func (p *persistent) GetChannelByService(addr net.Addr) *service.Channel {
+	for _, channel := range p.Channels {
+		if channel.Dst.Addr.String() == addr.String() {
+			return channel
+		}
+	}
+	return nil
+}
+
 func (p *persistent) GetChannel(client *service.Client) *service.Channel {
 	channel, ok := p.Channels[client.Addr.String()]
 
@@ -51,7 +61,7 @@ func (p *persistent) GetChannel(client *service.Client) *service.Channel {
 
 func (p *persistent) Acquire(client *service.Client) *service.Service {
 	s := p.Next()
-	fmt.Printf("Selected %s for %s total: %d", s.Addr, client.Addr, len(p.Services))
+	fmt.Printf("Selected %s for %s total: %d\n", s.Addr, client.Addr, len(p.Services))
 	return s
 }
 

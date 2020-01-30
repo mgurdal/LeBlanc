@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"fmt"
+	"net"
 	"sync"
 
 	"github.com/mgurdal/lb/service"
@@ -21,6 +22,16 @@ func NewRobin(services []*service.Service) Strategy {
 		mu:       new(sync.Mutex),
 	}
 }
+
+func (r *roundrobin) GetChannelByService(addr net.Addr) *service.Channel {
+	for _, channel := range r.Channels {
+		if channel.Dst.Addr.String() == addr.String() {
+			return channel
+		}
+	}
+	return nil
+}
+
 func (r *roundrobin) GetChannel(client *service.Client) *service.Channel {
 	r.mu.Lock()
 	sc := r.Channels[r.next]
